@@ -18,6 +18,10 @@ on:
         description: "Optional token for pushing the badge commit (defaults to GITHUB_TOKEN)"
         required: false
 
+# read-only baseline; the test job elevates what it needs for the badge commit and test report
+permissions:
+  contents: read
+
 jobs:
 
   # ---------- static analysis ----------
