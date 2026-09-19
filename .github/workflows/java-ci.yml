@@ -1,8 +1,7 @@
 # Reusable CI for Spring Divas Gradle/Java services.
-# Runs Checkstyle + PMD -> build -> tests with JaCoCo coverage; the test job also commits the coverage badge
-# to the PR branch (so it reaches main through the PR itself).
+# Runs Checkstyle -> build -> tests.
 #
-# Caller must grant: contents: write, checks: write, pull-requests: read
+# Caller must grant: contents: read, checks: write, pull-requests: read
 
 name: Java CI
 
@@ -13,12 +12,8 @@ on:
         description: "JDK version to build with"
         type: string
         default: "25"
-    secrets:
-      badge-token:
-        description: "Optional token for pushing the badge commit (defaults to GITHUB_TOKEN)"
-        required: false
 
-# read-only baseline; the test job elevates what it needs for the test report and badge commit
+# read-only baseline; the test job elevates what it needs for the test report
 permissions:
   contents: read
 
@@ -102,32 +97,18 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     permissions:
-      contents: write   # badge commit to the PR branch
+      contents: read
       checks: write     # dorny/test-reporter
       pull-requests: read
-    env:
-      # badge is committed only on same-repo PRs; fork PRs get a read-only token and cannot push
-      PUSH_BADGE: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          # on a same-repo PR, test the PR branch itself (not the merge commit) so the badge matches the branch it is pushed to;
-          # empty ref = default checkout (push to main, fork PRs)
-          ref: ${{ env.PUSH_BADGE == 'true' && github.head_ref || '' }}
-          # keep the token out of .git/config so code run by ./gradlew cannot read it
-          persist-credentials: false
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: ${{ inputs.java-version }}
       - uses: gradle/actions/setup-gradle@v4
-      - name: Run tests with coverage
-        run: ./gradlew test jacocoTestReport
-
-      - name: Print total coverage
-        run: |
-          CSV=build/reports/jacoco/test/jacocoTestReport.csv
-          awk -F"," 'NR > 1 { missed += $4; covered += $5 } END { total = missed + covered; printf "Total instruction coverage: %.0f%%\n", total ? covered / total * 100 : 0 }' "$CSV" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Run tests
+        run: ./gradlew test
 
       - name: Publish JUnit test report
         if: always()
@@ -136,36 +117,3 @@ jobs:
           name: JUnit Tests
           path: "build/test-results/test/TEST-*.xml"
           reporter: java-junit
-
-      - name: Upload JaCoCo report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: jacoco-report
-          path: build/reports/jacoco/test/
-
-      - name: Generate coverage badge
-        if: env.PUSH_BADGE == 'true'
-        uses: cicirello/jacoco-badge-generator@v2
-        with:
-          jacoco-csv-file: build/reports/jacoco/test/jacocoTestReport.csv
-          badges-directory: .github/badges
-          generate-branches-badge: true
-
-      # stop the Gradle daemon so no process started by the build outlives it and sees the push token;
-      # a separate step so the wrapper itself never runs with the token in its env
-      - name: Stop Gradle daemon
-        if: env.PUSH_BADGE == 'true'
-        run: ./gradlew --stop
-
-      - name: Commit updated badge to PR branch
-        if: env.PUSH_BADGE == 'true'
-        env:
-          BRANCH: ${{ github.head_ref }}
-          PUSH_TOKEN: ${{ secrets.badge-token || github.token }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .github/badges/*.svg
-          # ignore git hooks: the build could have planted one in .git/hooks to grab the token
-          git diff --staged --quiet || (git -c core.hooksPath=/dev/null commit -m "chore: update coverage badge" && git -c core.hooksPath=/dev/null push "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:$BRANCH")
