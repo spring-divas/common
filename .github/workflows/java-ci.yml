@@ -156,7 +156,8 @@ jobs:
         with:
           # check out the PR branch itself (not the merge commit) so the badge can be pushed back to it
           ref: ${{ github.head_ref }}
-          token: ${{ secrets.badge-token || github.token }}
+          # the push token is handed only to the final push step, not persisted for the actions in between
+          persist-credentials: false
       - name: Download JaCoCo report
         uses: actions/download-artifact@v4
         with:
@@ -173,8 +174,9 @@ jobs:
       - name: Commit updated badge to PR branch
         env:
           BRANCH: ${{ github.head_ref }}
+          PUSH_TOKEN: ${{ secrets.badge-token || github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .github/badges/*.svg
-          git diff --staged --quiet || (git commit -m "chore: update coverage badge" && git push origin "HEAD:$BRANCH")
+          git diff --staged --quiet || (git commit -m "chore: update coverage badge" && git push "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:$BRANCH")
