@@ -1,0 +1,155 @@
+# Reusable CI for Spring Divas Gradle/Java services.
+# Runs Checkstyle + PMD -> build -> tests with JaCoCo coverage, and commits the coverage badge
+# to the PR branch (so it reaches main through the PR itself).
+#
+# Caller must grant: contents: write, checks: write, pull-requests: read
+
+name: Java CI
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        description: "JDK version to build with"
+        type: string
+        default: "25"
+    secrets:
+      badge-token:
+        description: "Optional token for pushing the badge commit (defaults to GITHUB_TOKEN)"
+        required: false
+
+jobs:
+
+  # ---------- static analysis ----------
+
+  checkstyle:
+    name: Checkstyle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java-version }}
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run Checkstyle
+        run: ./gradlew checkstyleMain checkstyleTest
+      - name: Show violations on failure
+        if: failure()
+        run: |
+          echo "checkstyle violations found:"
+          cat build/reports/checkstyle/*.xml || true
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkstyle-report
+          path: build/reports/checkstyle/
+
+  pmd:
+    name: PMD
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java-version }}
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run PMD
+        run: ./gradlew pmdMain pmdTest
+      - name: Show violations on failure
+        if: failure()
+        run: |
+          echo "pmd violations found:"
+          cat build/reports/pmd/*.xml || true
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pmd-report
+          path: build/reports/pmd/
+
+  # ---------- build ----------
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [checkstyle, pmd]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java-version }}
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build jar
+        run: ./gradlew bootJar
+      - name: Upload jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: jar
+          path: build/libs/*.jar
+
+  # ---------- test ----------
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write   # badge commit to the PR branch
+      checks: write     # dorny/test-reporter
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # on a same-repo PR, check out the PR branch itself (not the merge commit) so the badge can be pushed back to it;
+          # empty ref = default checkout (push to main, fork PRs)
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref || '' }}
+          token: ${{ secrets.badge-token || github.token }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java-version }}
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run tests with coverage
+        run: ./gradlew test jacocoTestReport
+
+      - name: Print total coverage
+        run: |
+          CSV=build/reports/jacoco/test/jacocoTestReport.csv
+          awk -F"," 'NR > 1 { missed += $4; covered += $5 } END { total = missed + covered; printf "Total instruction coverage: %.0f%%\n", total ? covered / total * 100 : 0 }' "$CSV" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish JUnit test report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: JUnit Tests
+          path: "build/test-results/test/TEST-*.xml"
+          reporter: java-junit
+
+      - name: Upload JaCoCo report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: build/reports/jacoco/test/
+
+      - name: Generate coverage badge
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: cicirello/jacoco-badge-generator@v2
+        with:
+          jacoco-csv-file: build/reports/jacoco/test/jacocoTestReport.csv
+          badges-directory: .github/badges
+          generate-branches-badge: true
+
+      - name: Commit updated badge to PR branch
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/badges/*.svg
+          git diff --staged --quiet || (git commit -m "chore: update coverage badge" && git push origin "HEAD:$BRANCH")
