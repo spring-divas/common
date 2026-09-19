@@ -152,14 +152,18 @@ jobs:
           badges-directory: .github/badges
           generate-branches-badge: true
 
+      # stop the Gradle daemon so no process started by the build outlives it and sees the push token;
+      # a separate step so the wrapper itself never runs with the token in its env
+      - name: Stop Gradle daemon
+        if: env.PUSH_BADGE == 'true'
+        run: ./gradlew --stop
+
       - name: Commit updated badge to PR branch
         if: env.PUSH_BADGE == 'true'
         env:
           BRANCH: ${{ github.head_ref }}
           PUSH_TOKEN: ${{ secrets.badge-token || github.token }}
         run: |
-          # stop the Gradle daemon so no process started by the build outlives it and sees the push token
-          ./gradlew --stop
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .github/badges/*.svg
