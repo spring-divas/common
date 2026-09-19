@@ -158,7 +158,10 @@ jobs:
           BRANCH: ${{ github.head_ref }}
           PUSH_TOKEN: ${{ secrets.badge-token || github.token }}
         run: |
+          # stop the Gradle daemon so no process started by the build outlives it and sees the push token
+          ./gradlew --stop
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .github/badges/*.svg
-          git diff --staged --quiet || (git commit -m "chore: update coverage badge" && git push "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:$BRANCH")
+          # ignore git hooks: the build could have planted one in .git/hooks to grab the token
+          git diff --staged --quiet || (git -c core.hooksPath=/dev/null commit -m "chore: update coverage badge" && git -c core.hooksPath=/dev/null push "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:$BRANCH")
