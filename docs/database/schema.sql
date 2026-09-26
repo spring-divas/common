@@ -31,7 +31,7 @@ CREATE TABLE venue_manager (
     PRIMARY KEY (user_id, venue_id)
 );
 
-CREATE TABLE user_allergen (
+CREATE TABLE user_allergy (
     user_id     bigint NOT NULL REFERENCES "user"(id),
     allergen_id bigint NOT NULL REFERENCES allergen(id),
 
