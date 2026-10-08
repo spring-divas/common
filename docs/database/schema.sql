@@ -16,8 +16,8 @@ CREATE TYPE manager_role AS ENUM (
 
 CREATE TABLE "user" (
     id          bigint PRIMARY KEY,
-    name        varchar(100) NOT NULL,
-    surname     varchar(100) NOT NULL,
+    first_name  varchar(100) NOT NULL,
+    last_name   varchar(100) NOT NULL,
     email       varchar(255) NOT NULL UNIQUE,
     password    varchar(255) NOT NULL,
     role        user_role NOT NULL DEFAULT 'CUSTOMER'
