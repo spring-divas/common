@@ -1,0 +1,76 @@
+{
+  "consumer": {
+    "name": "payment-service"
+  },
+  "interactions": [
+    {
+      "contents": {
+        "content": {
+          "eventId": "e2490de5-5bd3-43d5-b7c4-526e33f71304",
+          "occurredAt": "2000-01-31T15:00:00Z",
+          "orderId": 123
+        },
+        "contentType": "application/json",
+        "encoded": false
+      },
+      "description": "an OrderCreated event",
+      "generators": {
+        "body": {
+          "$.eventId": {
+            "type": "Uuid"
+          }
+        }
+      },
+      "key": "f562c68e",
+      "matchingRules": {
+        "body": {
+          "$.eventId": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+              }
+            ]
+          },
+          "$.occurredAt": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z"
+              }
+            ]
+          },
+          "$.orderId": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "integer"
+              }
+            ]
+          }
+        }
+      },
+      "metadata": {
+        "contentType": "application/json"
+      },
+      "pending": false,
+      "type": "Asynchronous/Messages"
+    }
+  ],
+  "metadata": {
+    "pact-jvm": {
+      "version": "4.7.5"
+    },
+    "pactSpecification": {
+      "version": "4.0"
+    },
+    "plugins": [
+
+    ]
+  },
+  "provider": {
+    "name": "order-service"
+  }
+}
