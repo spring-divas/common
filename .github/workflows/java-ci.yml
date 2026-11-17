@@ -12,6 +12,10 @@ on:
         description: "JDK version to build with"
         type: string
         default: "25"
+      fetch_pact_contracts:
+        description: "Fetch Pact contracts from the common repository"
+        type: boolean
+        default: false
 
 # read-only baseline; the test job elevates what it needs for the test report
 permissions:
@@ -83,7 +87,22 @@ jobs:
           distribution: temurin
           java-version: ${{ inputs.java-version }}
       - uses: gradle/actions/setup-gradle@v4
+      - name: Fetch Pact contracts
+        if: inputs.fetch_pact_contracts
+        uses: actions/checkout@v4
+        with:
+          repository: spring-divas/common
+          ref: main
+          path: .pact-contracts
+      - name: Run tests with Pact contracts
+        if: inputs.fetch_pact_contracts
+        run: >
+          ./gradlew
+          -Dpact.rootDir="$GITHUB_WORKSPACE/.pact-contracts/contract/pact"
+          -Dpactfolder.path="$GITHUB_WORKSPACE/.pact-contracts/contract/pact"
+          test
       - name: Run tests
+        if: ${{ !inputs.fetch_pact_contracts }}
         run: ./gradlew test
 
       - name: Publish JUnit test report
