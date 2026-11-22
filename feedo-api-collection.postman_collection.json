@@ -1,0 +1,438 @@
+{
+	"info": {
+		"_postman_id": "feedo-microservices-exam-collection",
+		"name": "Feedo Microservice Platform - Exam Collection",
+		"description": "Повна колекція запитів для демонстрації та захисту мікросервісного проєкту Feedo. Містить сценарії реєстрації, авторизації, міжсервісних транзакцій та перевірки відмовостійкості.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8080/api",
+			"type": "string"
+		},
+		{
+			"key": "authToken",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "1. Authentication & Users",
+			"item": [
+				{
+					"name": "1.1 Register Customer",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"customer@example.com\",\n  \"password\": \"Password123!\",\n  \"firstName\": \"Олександр\",\n  \"lastName\": \"Петренко\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/user/customer",
+							"host": ["{{baseUrl}}"],
+							"path": ["user", "customer"]
+						}
+					}
+				},
+				{
+					"name": "1.2 Register Venue Manager",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"manager@example.com\",\n  \"password\": \"Password123!\",\n  \"firstName\": \"Ірина\",\n  \"lastName\": \"Коваленко\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/user/manager",
+							"host": ["{{baseUrl}}"],
+							"path": ["user", "manager"]
+						}
+					}
+				},
+				{
+					"name": "1.3 Login (Generate Token)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.token) {",
+									"    pm.collectionVariables.set('authToken', jsonData.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"customer@example.com\",\n  \"password\": \"Password123!\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/token",
+							"host": ["{{baseUrl}}"],
+							"path": ["auth", "token"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "2. Business Flow 1 - Venue & Menu",
+			"item": [
+				{
+					"name": "2.1 Create Venue",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Ресторан Дива\",\n  \"address\": \"м. Київ, вул. Хрещатик, 10\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/venue",
+							"host": ["{{baseUrl}}"],
+							"path": ["venue"]
+						}
+					}
+				},
+				{
+					"name": "2.2 Create Category",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"venueId\": 1,\n  \"name\": \"Основні страви\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/category",
+							"host": ["{{baseUrl}}"],
+							"path": ["category"]
+						}
+					}
+				},
+				{
+					"name": "2.3 Create Dish (Triggers Kafka Outbox)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"venueId\": 1,\n  \"category\": 1,\n  \"name\": \"Український борщ із пампушками\",\n  \"description\": \"Традиційний борщ із яловичиною, подається з часниковими пампушками\",\n  \"price\": 185.50,\n  \"ingredients\": []\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/dish",
+							"host": ["{{baseUrl}}"],
+							"path": ["dish"]
+						}
+					}
+				},
+				{
+					"name": "2.4 Download Menu PDF",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/menu/1/pdf",
+							"host": ["{{baseUrl}}"],
+							"path": ["menu", "1", "pdf"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "3. Business Flow 2 - Order Lifecycle",
+			"item": [
+				{
+					"name": "3.1 Create Order",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							},
+							{
+								"key": "X-Correlation-Id",
+								"value": "postman-corr-order-001"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"userId\": 1,\n  \"venueId\": 1,\n  \"tableId\": 5,\n  \"items\": [\n    {\n      \"dishId\": 1,\n      \"quantity\": 2\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/order",
+							"host": ["{{baseUrl}}"],
+							"path": ["order"]
+						}
+					}
+				},
+				{
+					"name": "3.2 Get Order by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							},
+							{
+								"key": "X-Correlation-Id",
+								"value": "postman-corr-order-001"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/order/1",
+							"host": ["{{baseUrl}}"],
+							"path": ["order", "1"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "4. Business Flow 3 - Payment & Idempotency",
+			"item": [
+				{
+					"name": "4.1 Process Payment (with Idempotency-Key)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "idempotency-key-order-1-demo"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							},
+							{
+								"key": "X-Correlation-Id",
+								"value": "postman-corr-pay-001"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"orderId\": 1\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/payment",
+							"host": ["{{baseUrl}}"],
+							"path": ["payment"]
+						}
+					}
+				},
+				{
+					"name": "4.2 Pay Order (Cross-service gRPC / Sync)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/order/1/pay",
+							"host": ["{{baseUrl}}"],
+							"path": ["order", "1", "pay"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "5. Business Flow 4 - Reviews & Rating Sync",
+			"item": [
+				{
+					"name": "5.1 Review Dish (Checks Order History)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"dishId\": 1,\n  \"content\": \"Чудовий борщ!\",\n  \"rating\": 5\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/review/dish",
+							"host": ["{{baseUrl}}"],
+							"path": ["review", "dish"]
+						}
+					}
+				},
+				{
+					"name": "5.2 Review Venue (Syncs Rating via gRPC)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"venueId\": 1,\n  \"content\": \"Чудовий ресторан!\",\n  \"rating\": 5\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/review/venue",
+							"host": ["{{baseUrl}}"],
+							"path": ["review", "venue"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "6. Resilience & Fault Handling",
+			"item": [
+				{
+					"name": "6.1 Rate Limiter Trigger (Burst Requests)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/order",
+							"host": ["{{baseUrl}}"],
+							"path": ["order"]
+						}
+					}
+				},
+				{
+					"name": "6.2 Missing Header (400 ProblemDetail)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"orderId\": 1\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/payment",
+							"host": ["{{baseUrl}}"],
+							"path": ["payment"]
+						}
+					}
+				},
+				{
+					"name": "6.3 Validation Error (400 ProblemDetail)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "validation-test-key"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"orderId\": null\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/payment",
+							"host": ["{{baseUrl}}"],
+							"path": ["payment"]
+						}
+					}
+				}
+			]
+		}
+	]
+}
