@@ -1,0 +1,167 @@
+{
+  "consumer": {
+    "name": "order-service"
+  },
+  "interactions": [
+    {
+      "contents": {
+        "content": {
+          "dishId": 123,
+          "eventId": "e2490de5-5bd3-43d5-b7c4-526e33f71304",
+          "name": "Borscht",
+          "price": 120.50,
+          "venueId": 456
+        },
+        "contentType": "application/json",
+        "encoded": false
+      },
+      "description": "a DishCreated event",
+      "generators": {
+        "body": {
+          "$.eventId": {
+            "type": "Uuid"
+          }
+        }
+      },
+      "key": "ca0752b0",
+      "matchingRules": {
+        "body": {
+          "$.dishId": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "integer"
+              }
+            ]
+          },
+          "$.eventId": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+              }
+            ]
+          },
+          "$.name": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          },
+          "$.price": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "decimal"
+              }
+            ]
+          },
+          "$.venueId": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "integer"
+              }
+            ]
+          }
+        }
+      },
+      "metadata": {
+        "contentType": "application/json",
+        "eventType": "DishCreated"
+      },
+      "pending": false,
+      "type": "Asynchronous/Messages"
+    },
+    {
+      "contents": {
+        "content": {
+          "dishId": 123,
+          "eventId": "e2490de5-5bd3-43d5-b7c4-526e33f71304",
+          "name": "Borscht",
+          "price": 120.50,
+          "venueId": 456
+        },
+        "contentType": "application/json",
+        "encoded": false
+      },
+      "description": "a DishUpdated event",
+      "generators": {
+        "body": {
+          "$.eventId": {
+            "type": "Uuid"
+          }
+        }
+      },
+      "key": "eaf5ca43",
+      "matchingRules": {
+        "body": {
+          "$.dishId": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "integer"
+              }
+            ]
+          },
+          "$.eventId": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+              }
+            ]
+          },
+          "$.name": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          },
+          "$.price": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "decimal"
+              }
+            ]
+          },
+          "$.venueId": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "integer"
+              }
+            ]
+          }
+        }
+      },
+      "metadata": {
+        "contentType": "application/json",
+        "eventType": "DishUpdated"
+      },
+      "pending": false,
+      "type": "Asynchronous/Messages"
+    }
+  ],
+  "metadata": {
+    "pact-jvm": {
+      "version": "4.7.5"
+    },
+    "pactSpecification": {
+      "version": "4.0"
+    },
+    "plugins": [
+
+    ]
+  },
+  "provider": {
+    "name": "venue-and-menu-service"
+  }
+}

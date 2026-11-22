@@ -1,0 +1,85 @@
+{
+  "consumer": {
+    "name": "review-service"
+  },
+  "interactions": [
+    {
+      "description": "a request to check a dish order",
+      "key": "32275c6e",
+      "pending": false,
+      "request": {
+        "method": "GET",
+        "path": "/api/order/exists/dish",
+        "query": {
+          "dishId": [
+            "456"
+          ],
+          "userId": [
+            "123"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "content": true,
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "content-type": [
+            "application/json"
+          ]
+        },
+        "status": 200
+      },
+      "transport": "http",
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "description": "a request to check a venue visit",
+      "key": "7955afec",
+      "pending": false,
+      "request": {
+        "method": "GET",
+        "path": "/api/order/exists/venue",
+        "query": {
+          "userId": [
+            "123"
+          ],
+          "venueId": [
+            "456"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "content": true,
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "content-type": [
+            "application/json"
+          ]
+        },
+        "status": 200
+      },
+      "transport": "http",
+      "type": "Synchronous/HTTP"
+    }
+  ],
+  "metadata": {
+    "pact-jvm": {
+      "version": "4.7.5"
+    },
+    "pactSpecification": {
+      "version": "4.0"
+    },
+    "plugins": [
+
+    ]
+  },
+  "provider": {
+    "name": "order-service"
+  }
+}
