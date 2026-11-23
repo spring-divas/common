@@ -1,11 +1,7 @@
 ### Feedo Microservice Platform - Exam Request Collection
-### Base URL for API Gateway / Ingress (Single Entry Point)
+### Base URL of the ingress (single entry point). Forward the ingress-nginx controller to the host first:
+### kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 8080:80
 @baseUrl = http://localhost:8080/api
-@authServiceUrl = http://localhost:8082/api
-@venueServiceUrl = http://localhost:8081/api
-@orderServiceUrl = http://localhost:8085/api
-@paymentServiceUrl = http://localhost:8084/api
-@reviewServiceUrl = http://localhost:8083/api
 
 ###############################################################################
 # 1. ДЕМОНСТРАЦІЯ: Реєстрація та Автентифікація (user-service)
