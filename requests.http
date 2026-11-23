@@ -1,245 +1,420 @@
 ### Feedo Microservice Platform - Exam Request Collection
 ### Base URL of the ingress (single entry point). Forward the ingress-nginx controller to the host first:
 ### kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 8080:80
+### Run the requests from top to bottom: tokens and ids are saved by the response handlers.
 @baseUrl = http://localhost:8080/api
+@adminEmail = admin@feedo.com
+@adminPassword = <ADMIN_PASSWORD from user-secret>
+@customerPassword = Password123!
 
 ###############################################################################
-# 1. ДЕМОНСТРАЦІЯ: Реєстрація та Автентифікація (user-service)
+# 0. Автентифікація (user-service)
 ###############################################################################
 
-### 1.1 Реєстрація нового клієнта (Customer)
-# @name registerCustomer
-POST {{baseUrl}}/user/customer
-Content-Type: application/json
-
-{
-  "email": "customer@example.com",
-  "password": "Password123!",
-  "firstName": "Олександр",
-  "lastName": "Петренко"
-}
-
-### 1.2 Реєстрація менеджера закладу (Venue Manager)
-# @name registerManager
-POST {{baseUrl}}/user/manager
-Content-Type: application/json
-
-{
-  "email": "manager@example.com",
-  "password": "Password123!",
-  "firstName": "Ірина",
-  "lastName": "Коваленко"
-}
-
-### 1.3 Логін користувача та отримання JWT-токена
-# @name login
+### 0.1 Логін адміністратора (ADMIN_EMAIL / ADMIN_PASSWORD з user-secret)
 POST {{baseUrl}}/auth/token
 Content-Type: application/json
 
 {
-  "email": "customer@example.com",
-  "password": "Password123!"
+  "email": "{{adminEmail}}",
+  "password": "{{adminPassword}}"
 }
 
 > {%
-    client.global.set("authToken", response.body.token);
+    client.test("Status is 200", () => client.assert(response.status === 200, "Unexpected status " + response.status));
+    client.global.set("adminToken", response.body);
 %}
 
-
-###############################################################################
-# 2. БІЗНЕС-ОПЕРАЦІЯ 1: Заклад та Меню (venue-and-menu-service)
-# Міжсервісна взаємодія:
-# - Створення страви зберігає сутність та подію в OutboxEvent в одній @Transactional
-# - Outbox Processor публікує подію в топік Kafka 'dish-events'
-# - order-service споживає подію та синхронізує локальну репліку страв
-###############################################################################
-
-### 2.1 Створення закладу
-# @name createVenue
-POST {{baseUrl}}/venue
+### 0.2 Реєстрація клієнта
+< {%
+    client.global.set("customerEmail", "customer." + Date.now() + "@example.com");
+%}
+POST {{baseUrl}}/user/customer
 Content-Type: application/json
-Authorization: Bearer {{authToken}}
+
+{
+  "firstName": "Олександр",
+  "lastName": "Петренко",
+  "email": "{{customerEmail}}",
+  "password": "{{customerPassword}}"
+}
+
+> {%
+    client.test("Status is 200", () => client.assert(response.status === 200, "Unexpected status " + response.status));
+    client.global.set("customerId", response.body.id);
+%}
+
+### 0.3 Логін клієнта
+POST {{baseUrl}}/auth/token
+Content-Type: application/json
+
+{
+  "email": "{{customerEmail}}",
+  "password": "{{customerPassword}}"
+}
+
+> {%
+    client.test("Status is 200", () => client.assert(response.status === 200, "Unexpected status " + response.status));
+    client.global.set("customerToken", response.body);
+%}
+
+###############################################################################
+# 1. Налаштування закладу (адміністратор, venue-and-menu-service)
+###############################################################################
+
+### 1.1 Створення закладу
+POST {{baseUrl}}/venue
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
 
 {
   "name": "Ресторан Дива",
   "address": "м. Київ, вул. Хрещатик, 10"
 }
 
-### 2.2 Створення категорії страв
-# @name createCategory
-POST {{baseUrl}}/category
+> {%
+    client.test("Status is 201", () => client.assert(response.status === 201, "Unexpected status " + response.status));
+    client.global.set("venueId", response.body.id);
+%}
+
+### 1.2 Створення столика
+POST {{baseUrl}}/table
+Authorization: Bearer {{adminToken}}
 Content-Type: application/json
-Authorization: Bearer {{authToken}}
 
 {
-  "venueId": 1,
+  "venueId": {{venueId}},
+  "isAvailable": true
+}
+
+> {%
+    client.test("Status is 201", () => client.assert(response.status === 201, "Unexpected status " + response.status));
+    client.global.set("tableId", response.body.id);
+%}
+
+### 1.3 Створення категорії
+POST {{baseUrl}}/category
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "venueId": {{venueId}},
   "name": "Основні страви"
 }
 
-### 2.3 Створення алергену
-# @name createAllergen
-POST {{baseUrl}}/allergen
-Content-Type: application/json
-Authorization: Bearer {{authToken}}
+> {%
+    client.test("Status is 201", () => client.assert(response.status === 201, "Unexpected status " + response.status));
+    client.global.set("categoryId", response.body.id);
+%}
 
-{
-  "name": "Глютен"
-}
-
-### 2.4 Створення інгредієнта з алергеном
-# @name createIngredient
-POST {{baseUrl}}/ingredient
-Content-Type: application/json
-Authorization: Bearer {{authToken}}
-
-{
-  "name": "Борошно вищого ґатунку",
-  "quantity": 50,
-  "allergens": [1]
-}
-
-### 2.5 Створення страви (генерує Transactional Outbox подію в Kafka dish-events)
-# @name createDish
+### 1.4 Створення страви (outbox + синхронізація з order-service)
 POST {{baseUrl}}/dish
+Authorization: Bearer {{adminToken}}
 Content-Type: application/json
-Authorization: Bearer {{authToken}}
 
 {
-  "venueId": 1,
-  "category": 1,
+  "venueId": {{venueId}},
+  "category": {{categoryId}},
   "name": "Український борщ із пампушками",
-  "description": "Традиційний борщ із яловичиною, подається з часниковими пампушками та сметаною",
-  "price": 185.50,
-  "ingredients": [1]
+  "description": "Традиційний борщ із часниковими пампушками",
+  "price": 185.5,
+  "ingredients": []
 }
 
-### 2.6 Генерація динамічного PDF-меню закладу
-# @name getMenuPdf
-GET {{baseUrl}}/menu/1/pdf
-Authorization: Bearer {{authToken}}
-
+> {%
+    client.test("Status is 201", () => client.assert(response.status === 201, "Unexpected status " + response.status));
+    client.global.set("dishId", response.body.id);
+%}
 
 ###############################################################################
-# 3. БІЗНЕС-ОПЕРАЦІЯ 2: Оформлення Замовлення (order-service)
-# Міжсервісна взаємодія:
-# - order-service перевіряє користувача у user-service через @HttpExchange
-# - order-service перевіряє страви та ціни у venue-service через ResilientVenueClient
-# - Створює замовлення зі статусом PENDING
-# - Зберігає подію ORDER_CREATED у OutboxEvent та відправляє у Kafka 'order-created'
+# 2. СЦЕНАРІЙ: перегляд меню (без токена)
 ###############################################################################
 
-### 3.1 Створення замовлення клієнтом
-# @name createOrder
+### 2.1 Меню закладу
+GET {{baseUrl}}/menu?venueId={{venueId}}
+
+> {%
+    client.test("Status is 200", () => client.assert(response.status === 200, "Unexpected status " + response.status));
+    client.test("response.body.some(dish => dish.id == client.global.get('dishId'))", () => client.assert(response.body.some(dish => dish.id == client.global.get("dishId"))));
+%}
+
+### 2.2 Меню у PDF
+GET {{baseUrl}}/menu/pdf?venueId={{venueId}}
+
+> {%
+    client.test("Status is 200", () => client.assert(response.status === 200, "Unexpected status " + response.status));
+    client.test("response.contentType.mimeType === 'application/pdf'", () => client.assert(response.contentType.mimeType === "application/pdf"));
+%}
+
+###############################################################################
+# 3. СЦЕНАРІЙ: створення та оплата замовлення (клієнт, order -> user REST, order <-> payment gRPC)
+###############################################################################
+
+### 3.1 Створення замовлення
+# Страви потрапляють в order-service асинхронно. Якщо отримали помилку про відсутню страву, повторіть запит за секунду.
 POST {{baseUrl}}/order
+Authorization: Bearer {{customerToken}}
+X-Correlation-Id: http-client-order
 Content-Type: application/json
-Authorization: Bearer {{authToken}}
-X-Correlation-Id: test-order-corr-001
 
 {
-  "userId": 1,
-  "venueId": 1,
-  "tableId": 5,
+  "venueId": {{venueId}},
+  "tableId": {{tableId}},
   "items": [
     {
-      "dishId": 1,
+      "dishId": {{dishId}},
       "quantity": 2
     }
   ]
 }
 
-### 3.2 Перевірка статусу замовлення
-# @name getOrder
-GET {{baseUrl}}/order/1
-Authorization: Bearer {{authToken}}
-X-Correlation-Id: test-order-corr-001
+> {%
+    client.test("Status is 201", () => client.assert(response.status === 201, "Unexpected status " + response.status));
+    client.test("response.body.status === 'NEW'", () => client.assert(response.body.status === "NEW"));
+    client.global.set("orderId", response.body.id);
+%}
 
+### 3.2 Перегляд замовлення
+GET {{baseUrl}}/order/{{orderId}}
+Authorization: Bearer {{customerToken}}
 
-###############################################################################
-# 4. БІЗНЕС-ОПЕРАЦІЯ 3: Оплата Замовлення (payment-service)
-# Міжсервісна взаємодія:
-# - payment-service приймає запит з унікальним Idempotency-Key
-# - gRPC двоспрямований стрімінг між order-service та payment-service
-# - При успіху статус замовлення змінюється на PAID
-###############################################################################
+> {%
+    client.test("Status is 200", () => client.assert(response.status === 200, "Unexpected status " + response.status));
+%}
 
-### 4.1 Проведення платежу з ідемпотентним ключем
-# @name createPayment
-POST {{baseUrl}}/payment
-Content-Type: application/json
-Idempotency-Key: idempotency-key-order-1-attempt-1
-Authorization: Bearer {{authToken}}
-X-Correlation-Id: test-payment-corr-001
-
-{
-  "orderId": 1
-}
-
-### 4.2 Оплата замовлення через Order Service (міжсервісний виклик через gRPC/REST)
-# @name payOrder
-POST {{baseUrl}}/order/1/pay
-Content-Type: application/json
-Authorization: Bearer {{authToken}}
-
-
-###############################################################################
-# 5. БІЗНЕС-ОПЕРАЦІЯ 4: Відгук та Синхронізація Рейтингу (review-service)
-# Міжсервісна взаємодія:
-# - review-service звертається до order-service (через CircuitBreaker/OrderClient),
-#   щоб підтвердити, що клієнт дійсно замовляв цю страву
-# - При публікації відгуку розраховується середній рейтинг
-# - Синхронізація нового рейтингу у venue-service через gRPC (RatingSyncGrpcService)
-###############################################################################
-
-### 5.1 Залишити відгук на страву
-# @name reviewDish
-POST {{baseUrl}}/review/dish
-Content-Type: application/json
-Authorization: Bearer {{authToken}}
-
-{
-  "dishId": 1,
-  "content": "Дуже смачний борщ! Пампушки теплі та запашні.",
-  "rating": 5
-}
-
-### 5.2 Залишити відгук на заклад
-# @name reviewVenue
-POST {{baseUrl}}/review/venue
-Content-Type: application/json
-Authorization: Bearer {{authToken}}
-
-{
-  "venueId": 1,
-  "content": "Чудова атмосфера та швидке обслуговування.",
-  "rating": 5
-}
-
-
-###############################################################################
-# 6. ТЕСТУВАННЯ ВІДМОВОСТІЙКОСТІ ТА ОБМЕЖЕНЬ (Rate Limiter & Circuit Breaker)
-###############################################################################
-
-### 6.1 Перевірка Rate Limiter (швидка серія запитів призводить до HTTP 429 ProblemDetail)
+### 3.3 Мої замовлення
 GET {{baseUrl}}/order
-Authorization: Bearer {{authToken}}
+Authorization: Bearer {{customerToken}}
 
-### 6.2 Перевірка валідації DTO (ProblemDetail HTTP 400 із картою помилок)
-POST {{baseUrl}}/payment
+> {%
+    client.test("Status is 200", () => client.assert(response.status === 200, "Unexpected status " + response.status));
+    client.test("response.body.some(order => order.id == client.global.get('orderId'))", () => client.assert(response.body.some(order => order.id == client.global.get("orderId"))));
+%}
+
+### 3.4 Оплата замовлення (gRPC)
+POST {{baseUrl}}/order/{{orderId}}/pay
+Authorization: Bearer {{customerToken}}
+
+> {%
+    client.test("Status is 200", () => client.assert(response.status === 200, "Unexpected status " + response.status));
+    client.test("response.body.status === 'PAID'", () => client.assert(response.body.status === "PAID"));
+%}
+
+###############################################################################
+# 4. СЦЕНАРІЙ: відгук на страву (клієнт, review -> order REST, review -> venue gRPC)
+###############################################################################
+
+### 4.1 Адміністратор переводить замовлення в READY
+PUT {{baseUrl}}/order/{{orderId}}
+Authorization: Bearer {{adminToken}}
 Content-Type: application/json
-Idempotency-Key: valid-key
 
 {
-  "orderId": null
+  "venueId": {{venueId}},
+  "tableId": {{tableId}},
+  "items": [
+    {
+      "dishId": {{dishId}},
+      "quantity": 2
+    }
+  ],
+  "status": "READY"
 }
 
-### 6.3 Перевірка відсутності обов'язкового заголовка Idempotency-Key (ProblemDetail HTTP 400)
-POST {{baseUrl}}/payment
+> {%
+    client.test("Status is 200", () => client.assert(response.status === 200, "Unexpected status " + response.status));
+    client.test("response.body.status === 'READY'", () => client.assert(response.body.status === "READY"));
+%}
+
+### 4.2 Відгук на страву
+POST {{baseUrl}}/review/dish
+Authorization: Bearer {{customerToken}}
 Content-Type: application/json
 
 {
-  "orderId": 1
+  "dishId": {{dishId}},
+  "content": "Чудовий борщ!",
+  "rating": 5
 }
 
-### 6.4 Перевірка 404 Not Found (ProblemDetail HTTP 404)
-GET {{baseUrl}}/order/999999
-Authorization: Bearer {{authToken}}
+> {%
+    client.test("Status is 201", () => client.assert(response.status === 201, "Unexpected status " + response.status));
+%}
+
+### 4.3 Відгук на заклад
+POST {{baseUrl}}/review/venue
+Authorization: Bearer {{customerToken}}
+Content-Type: application/json
+
+{
+  "venueId": {{venueId}},
+  "content": "Чудовий ресторан!",
+  "rating": 5
+}
+
+> {%
+    client.test("Status is 201", () => client.assert(response.status === 201, "Unexpected status " + response.status));
+%}
+
+### 4.4 Відгуки на страви
+GET {{baseUrl}}/review/dish
+Authorization: Bearer {{customerToken}}
+
+> {%
+    client.test("Status is 200", () => client.assert(response.status === 200, "Unexpected status " + response.status));
+%}
+
+###############################################################################
+# 5. Гостьове замовлення (без токена)
+###############################################################################
+
+### 5.1 Створення гостьового замовлення
+POST {{baseUrl}}/order
+Content-Type: application/json
+
+{
+  "venueId": {{venueId}},
+  "tableId": {{tableId}},
+  "items": [
+    {
+      "dishId": {{dishId}},
+      "quantity": 2
+    }
+  ]
+}
+
+> {%
+    client.test("Status is 201", () => client.assert(response.status === 201, "Unexpected status " + response.status));
+    client.global.set("guestOrderId", response.body.id);
+    client.global.set("guestOrderToken", response.body.accessToken);
+%}
+
+### 5.2 Оплата з токеном доступу
+POST {{baseUrl}}/order/{{guestOrderId}}/pay
+X-Order-Token: {{guestOrderToken}}
+
+> {%
+    client.test("Status is 200", () => client.assert(response.status === 200, "Unexpected status " + response.status));
+%}
+
+### 5.3 Оплата без токена доступу -> 403
+POST {{baseUrl}}/order/{{guestOrderId}}/pay
+
+> {%
+    client.test("Status is 403", () => client.assert(response.status === 403, "Unexpected status " + response.status));
+%}
+
+### 5.4 Гість не може переглядати замовлення -> 401
+GET {{baseUrl}}/order/{{guestOrderId}}
+
+> {%
+    client.test("Status is 401", () => client.assert(response.status === 401, "Unexpected status " + response.status));
+%}
+
+###############################################################################
+# 6. Ідемпотентність платежу (адміністратор)
+###############################################################################
+
+### 6.1 Створення платежу
+< {%
+    client.global.set("paymentKey", "http-client-" + Date.now());
+%}
+POST {{baseUrl}}/payment
+Authorization: Bearer {{adminToken}}
+Idempotency-Key: {{paymentKey}}
+Content-Type: application/json
+
+{
+  "orderId": {{orderId}}
+}
+
+> {%
+    client.test("Status is 200 or 201", () => client.assert(response.status === 200 || response.status === 201, "Unexpected status " + response.status));
+    client.global.set("paymentId", response.body.id);
+%}
+
+### 6.2 Повтор з тим самим ключем повертає той самий платіж
+POST {{baseUrl}}/payment
+Authorization: Bearer {{adminToken}}
+Idempotency-Key: {{paymentKey}}
+Content-Type: application/json
+
+{
+  "orderId": {{orderId}}
+}
+
+> {%
+    client.test("Status is 200 or 201", () => client.assert(response.status === 200 || response.status === 201, "Unexpected status " + response.status));
+    client.test("response.body.id == client.global.get('paymentId')", () => client.assert(response.body.id == client.global.get("paymentId")));
+%}
+
+###############################################################################
+# 7. Помилки (ProblemDetail) та rate limiting
+###############################################################################
+
+### 7.1 Помилка валідації -> 400
+POST {{baseUrl}}/order
+Authorization: Bearer {{customerToken}}
+Content-Type: application/json
+
+{
+  "venueId": null,
+  "tableId": {{tableId}},
+  "items": []
+}
+
+> {%
+    client.test("Status is 400", () => client.assert(response.status === 400, "Unexpected status " + response.status));
+    client.test("response.body.status === 400", () => client.assert(response.body.status === 400));
+%}
+
+### 7.2 Замовлення не знайдено -> 404
+GET {{baseUrl}}/order/999999999
+Authorization: Bearer {{customerToken}}
+
+> {%
+    client.test("Status is 404", () => client.assert(response.status === 404, "Unexpected status " + response.status));
+    client.test("response.body.status === 404", () => client.assert(response.body.status === 404));
+%}
+
+### 7.3 Немає Idempotency-Key -> 400
+POST {{baseUrl}}/payment
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "orderId": {{orderId}}
+}
+
+> {%
+    client.test("Status is 400", () => client.assert(response.status === 400, "Unexpected status " + response.status));
+    client.test("response.body.status === 400", () => client.assert(response.body.status === 400));
+%}
+
+### 7.4 Без токена -> 401
+GET {{baseUrl}}/venue
+
+> {%
+    client.test("Status is 401", () => client.assert(response.status === 401, "Unexpected status " + response.status));
+%}
+
+### 7.5 Клієнт не може створити заклад -> 403
+POST {{baseUrl}}/venue
+Authorization: Bearer {{customerToken}}
+Content-Type: application/json
+
+{
+  "name": "Not allowed",
+  "address": "Kyiv"
+}
+
+> {%
+    client.test("Status is 403", () => client.assert(response.status === 403, "Unexpected status " + response.status));
+%}
+
+### 7.6 Rate limiter: виконайте запит кілька разів поспіль, щоб отримати 429
+GET {{baseUrl}}/menu?venueId={{venueId}}
+
+> {%
+    client.test("Status is 200 or 429", () => client.assert(response.status === 200 || response.status === 429, "Unexpected status " + response.status));
+%}
